@@ -19,53 +19,22 @@ from builtins import bytes
 import array
 import logging
 import sys
+import aardvark_py as api
 
 from .constants import *
-
-if sys.platform.startswith('linux'):
-    try:
-        from .ext.linux32 import aardvark as api
-    except ImportError:
-        try:
-            from .ext.linux64 import aardvark as api
-        except ImportError:
-            api = None
-elif sys.platform.startswith('win32'):
-    try:
-        from .ext.win32 import aardvark as api
-    except ImportError:
-        try:
-            from .ext.win64 import aardvark as api
-        except ImportError:
-            api = None
-elif sys.platform.startswith('darwin'):
-    try:
-        from .ext.osx32 import aardvark as api
-    except ImportError:
-        try:
-            from .ext.osx64 import aardvark as api
-        except ImportError:
-            api = None
-else:
-    api = None
-
-if not api:
-    raise RuntimeError('Unable to find suitable binary interface. '
-            'Unsupported platform?')
 
 log = logging.getLogger(__name__)
 
 def _raise_error_if_negative(val):
     """Raises an :class:`IOError` if `val` is negative."""
     if val < 0:
-        raise IOError(val, api.py_aa_status_string(val))
+        raise IOError(val, api.aa_status_string(val))
 
 def status_string(code):
     for k, v in globals().items():
         if k.startswith('I2C_STATUS_') and v == code:
             return k
     return 'I2C_STATUS_UNKNOWN_STATUS'
-
 
 def _raise_i2c_status_code_error_if_failure(code):
     """Raises an :class:`IOError` if `code` is not :data:`I2C_STATUS_OK`."""
@@ -86,7 +55,7 @@ def api_version():
     It returns the same value as :attr:`Aardvark.api_version` but you don't
     need to open a device.
     """
-    return _to_version_str(api.py_version() & 0xffff)
+    return _to_version_str(api.AA_SW_VERSION)
 
 def find_devices():
     """Return a list of dictionaries. Each dictionary represents one device.
@@ -111,7 +80,7 @@ def find_devices():
 
     # first fetch the number of attached devices, so we can create a buffer
     # with the exact amount of entries. api expects array of u16
-    num_devices = api.py_aa_find_devices(0, array.array('H'))
+    num_devices = api.aa_find_devices(array.array('H'))[0]
     _raise_error_if_negative(num_devices)
 
     # return an empty list if no device is connected
@@ -120,8 +89,7 @@ def find_devices():
 
     ports = array.array('H', (0,) * num_devices)
     unique_ids = array.array('I', (0,) * num_devices)
-    num_devices = api.py_aa_find_devices_ext(len(ports), len(unique_ids),
-            ports, unique_ids)
+    (num_devices, ports, unique_ids) = api.aa_find_devices_ext(ports, unique_ids)
     _raise_error_if_negative(num_devices)
     if num_devices == 0:
         return list()
@@ -195,7 +163,7 @@ class Aardvark(object):
     BUFFER_SIZE = 65535
 
     def __init__(self, port=0):
-        ret, ver = api.py_aa_open_ext(port)
+        ret, ver = api.aa_open_ext(port)
         _raise_error_if_negative(ret)
 
         #: A handle which is used as the first paramter for all calls to the
@@ -204,12 +172,12 @@ class Aardvark(object):
 
         # assign some useful names
         version = dict(
-            software = ver[0],
-            firmware = ver[1],
-            hardware = ver[2],
-            sw_req_by_fw = ver[3],
-            fw_req_by_sw = ver[4],
-            api_req_by_sw = ver[5],
+            software = ver.version.software,
+            firmware = ver.version.firmware,
+            hardware = ver.version.hardware,
+            sw_req_by_fw = ver.version.sw_req_by_fw,
+            fw_req_by_sw = ver.version.fw_req_by_sw,
+            api_req_by_sw = ver.version.api_req_by_sw
         )
 
         #: Hardware revision of the host adapter as a string. The format is
@@ -255,7 +223,7 @@ class Aardvark(object):
     def close(self):
         """Close the device."""
 
-        api.py_aa_close(self.handle)
+        api.aa_close(self.handle)
         self.handle = None
 
     def unique_id(self):
@@ -263,7 +231,7 @@ class Aardvark(object):
         serial number you can find on the adapter without the dash. Eg. the
         serial number 0012-345678 would be 12345678.
         """
-        return api.py_aa_unique_id(self.handle)
+        return api.aa_unique_id(self.handle)
 
     def unique_id_str(self):
         """Return the unique identifier. But unlike :func:`unique_id`, the ID
@@ -272,7 +240,7 @@ class Aardvark(object):
         return _unique_id_str(self.unique_id())
 
     def _interface_configuration(self, value):
-        ret = api.py_aa_configure(self.handle, value)
+        ret = api.aa_configure(self.handle, value)
         _raise_error_if_negative(ret)
         return ret
 
@@ -331,13 +299,13 @@ class Aardvark(object):
         The power-on default value is 100 kHz.
         """
 
-        ret = api.py_aa_i2c_bitrate(self.handle, 0)
+        ret = api.aa_i2c_bitrate(self.handle, 0)
         _raise_error_if_negative(ret)
         return ret
 
     @i2c_bitrate.setter
     def i2c_bitrate(self, value):
-        ret = api.py_aa_i2c_bitrate(self.handle, value)
+        ret = api.aa_i2c_bitrate(self.handle, value)
         _raise_error_if_negative(ret)
 
     @property
@@ -348,7 +316,7 @@ class Aardvark(object):
         Raises an :exc:`IOError` if the hardware adapter does not support
         pullup resistors.
         """
-        ret = api.py_aa_i2c_pullup(self.handle, I2C_PULLUP_QUERY)
+        ret = api.aa_i2c_pullup(self.handle, I2C_PULLUP_QUERY)
         _raise_error_if_negative(ret)
         return ret
 
@@ -358,7 +326,7 @@ class Aardvark(object):
             pullup = I2C_PULLUP_BOTH
         else:
             pullup = I2C_PULLUP_NONE
-        ret = api.py_aa_i2c_pullup(self.handle, pullup)
+        ret = api.aa_i2c_pullup(self.handle, pullup)
         _raise_error_if_negative(ret)
 
     @property
@@ -369,7 +337,7 @@ class Aardvark(object):
         Raises an :exc:`IOError` if the hardware adapter does not support
         the switchable power pins.
         """
-        ret = api.py_aa_target_power(self.handle, TARGET_POWER_QUERY)
+        ret = api.aa_target_power(self.handle, TARGET_POWER_QUERY)
         _raise_error_if_negative(ret)
         return ret
 
@@ -379,7 +347,7 @@ class Aardvark(object):
             power = TARGET_POWER_BOTH
         else:
             power = TARGET_POWER_NONE
-        ret = api.py_aa_target_power(self.handle, power)
+        ret = api.aa_target_power(self.handle, power)
         _raise_error_if_negative(ret)
 
     @property
@@ -392,13 +360,13 @@ class Aardvark(object):
 
         The power-on default value is 200 ms.
         """
-        ret = api.py_aa_i2c_bus_timeout(self.handle, 0)
+        ret = api.aa_i2c_bus_timeout(self.handle, 0)
         _raise_error_if_negative(ret)
         return ret
 
     @i2c_bus_timeout.setter
     def i2c_bus_timeout(self, timeout):
-        ret = api.py_aa_i2c_bus_timeout(self.handle, timeout)
+        ret = api.aa_i2c_bus_timeout(self.handle, timeout)
         _raise_error_if_negative(ret)
 
     def i2c_master_write(self, i2c_address, data, flags=I2C_NO_FLAGS):
@@ -412,8 +380,7 @@ class Aardvark(object):
         """
 
         data = array.array('B', data)
-        status, _ = api.py_aa_i2c_write_ext(self.handle, i2c_address, flags,
-                len(data), data)
+        status, _ = api.aa_i2c_write_ext(self.handle, i2c_address, flags, data)
         _raise_i2c_status_code_error_if_failure(status)
 
     def i2c_master_read(self, addr, length, flags=I2C_NO_FLAGS):
@@ -428,8 +395,8 @@ class Aardvark(object):
         """
 
         data = array.array('B', (0,) * length)
-        status, rx_len = api.py_aa_i2c_read_ext(self.handle, addr, flags,
-                length, data)
+        status, data, rx_len = api.aa_i2c_read_ext(self.handle, addr,
+                flags, data)
         _raise_i2c_status_code_error_if_failure(status)
         del data[rx_len:]
         return bytes(data)
@@ -464,7 +431,7 @@ class Aardvark(object):
         if timeout is None:
             timeout = -1
 
-        ret = api.py_aa_async_poll(self.handle, timeout)
+        ret = api.aa_async_poll(self.handle, timeout)
         _raise_error_if_negative(ret)
 
         events = list()
@@ -483,13 +450,13 @@ class Aardvark(object):
         You can wait for the data with :func:`poll` and get it with
         `i2c_slave_read`.
         """
-        ret = api.py_aa_i2c_slave_enable(self.handle, slave_address,
+        ret = api.aa_i2c_slave_enable(self.handle, slave_address,
                 self.BUFFER_SIZE, self.BUFFER_SIZE)
         _raise_error_if_negative(ret)
 
     def disable_i2c_slave(self):
         """Disable I2C slave mode."""
-        ret = api.py_aa_i2c_slave_disable(self.handle)
+        ret = api.aa_i2c_slave_disable(self.handle)
         _raise_error_if_negative(ret)
 
     def i2c_slave_read(self):
@@ -498,8 +465,7 @@ class Aardvark(object):
         The bytes are returned as a string object.
         """
         data = array.array('B', (0,) * self.BUFFER_SIZE)
-        status, addr, rx_len = api.py_aa_i2c_slave_read_ext(self.handle,
-                self.BUFFER_SIZE, data)
+        status, addr, rx_len = api.aa_i2c_slave_read_ext(self.handle, data)
         _raise_i2c_status_code_error_if_failure(status)
 
         # In case of general call, actually return the general call address
@@ -525,14 +491,14 @@ class Aardvark(object):
     @i2c_slave_response.setter
     def i2c_slave_response(self, data):
         data = array.array('B', data)
-        ret = api.py_aa_i2c_slave_set_response(self.handle, len(data), data)
+        ret = api.aa_i2c_slave_set_response(self.handle, data)
         _raise_error_if_negative(ret)
         self._i2c_slave_response = data
 
     @property
     def i2c_slave_last_transmit_size(self):
         """Returns the number of bytes transmitted by the slave."""
-        ret = api.py_aa_i2c_slave_write_stats(self.handle)
+        ret = api.aa_i2c_slave_write_stats(self.handle)
         _raise_error_if_negative(ret)
         return ret
 
@@ -544,7 +510,7 @@ class Aardvark(object):
         Raises an :exc:`IOError` if the hardware adapter does not support
         monitor mode.
         """
-        ret = api.py_aa_i2c_monitor_enable(self.handle)
+        ret = api.aa_i2c_monitor_enable(self.handle)
         _raise_error_if_negative(ret)
 
     def disable_i2c_monitor(self):
@@ -553,7 +519,7 @@ class Aardvark(object):
         Raises an :exc:`IOError` if the hardware adapter does not support
         monitor mode.
         """
-        ret = api.py_aa_i2c_monitor_disable(self.handle)
+        ret = api.aa_i2c_monitor_disable(self.handle)
         _raise_error_if_negative(ret)
 
     def i2c_monitor_read(self):
@@ -568,8 +534,7 @@ class Aardvark(object):
 
         """
         data = array.array('H', (0,) * self.BUFFER_SIZE)
-        ret = api.py_aa_i2c_monitor_read(self.handle, self.BUFFER_SIZE,
-                data)
+        ret = api.aa_i2c_monitor_read(self.handle, data)
         _raise_error_if_negative(ret)
         del data[ret:]
         return data.tolist()
@@ -583,18 +548,18 @@ class Aardvark(object):
 
         The power-on default value is 1000 kHz.
         """
-        ret = api.py_aa_spi_bitrate(self.handle, 0)
+        ret = api.aa_spi_bitrate(self.handle, 0)
         _raise_error_if_negative(ret)
         return ret
 
     @spi_bitrate.setter
     def spi_bitrate(self, value):
-        ret = api.py_aa_spi_bitrate(self.handle, value)
+        ret = api.aa_spi_bitrate(self.handle, value)
         _raise_error_if_negative(ret)
 
     def spi_configure(self, polarity, phase, bitorder):
         """Configure the SPI interface."""
-        ret = api.py_aa_spi_configure(self.handle, polarity, phase, bitorder)
+        ret = api.aa_spi_configure(self.handle, polarity, phase, bitorder)
         _raise_error_if_negative(ret)
 
     def spi_configure_mode(self, spi_mode):
@@ -612,8 +577,7 @@ class Aardvark(object):
         """Write a stream of bytes to a SPI device."""
         data_out = array.array('B', data)
         data_in = array.array('B', (0,) * len(data_out))
-        ret = api.py_aa_spi_write(self.handle, len(data_out), data_out,
-                len(data_in), data_in)
+        ret, data_in = api.aa_spi_write(self.handle, data_out, data_in)
         _raise_error_if_negative(ret)
         return bytes(data_in)
 
@@ -622,5 +586,5 @@ class Aardvark(object):
 
         Please note, that this only affects the master functions.
         """
-        ret = api.py_aa_spi_master_ss_polarity(self.handle, polarity)
+        ret = api.aa_spi_master_ss_polarity(self.handle, polarity)
         _raise_error_if_negative(ret)

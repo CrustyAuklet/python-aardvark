@@ -64,5 +64,8 @@ setup(name = name,
         },
         test_suite = 'tests',
         include_package_data = True,
-        install_requires = ['future'],
+        install_requires = [
+            'future',
+            'aardvark_py',
+        ],
 )
