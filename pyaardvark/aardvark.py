@@ -613,7 +613,7 @@ class Aardvark(object):
         bitmask = sum(used_outputs)
         if bitmask == sum(self._configured_gpio_outputs):
             return
-        ret = api.py_aa_gpio_direction(self.handle, bitmask)
+        ret = api.aa_gpio_direction(self.handle, bitmask)
         _raise_error_if_negative(ret)
         self._configured_gpio_outputs = used_outputs
 
@@ -635,7 +635,7 @@ class Aardvark(object):
         bitmask = sum(enabled_pullups)
         if bitmask == sum(self._enabled_gpio_pullups):
             return
-        ret = api.py_aa_gpio_pullup(self.handle, bitmask)
+        ret = api.aa_gpio_pullup(self.handle, bitmask)
         _raise_error_if_negative(ret)
         self._enabled_gpio_pullups = enabled_pullups
 
@@ -646,7 +646,7 @@ class Aardvark(object):
         new_list = list(self._high_gpio_outputs)
         new_list.remove(output)
         mask = sum(new_list)
-        ret = api.py_aa_gpio_set(self.handle, mask)
+        ret = api.aa_gpio_set(self.handle, mask)
         _raise_error_if_negative(ret)
         self._high_gpio_outputs = new_list
 
@@ -672,7 +672,7 @@ class Aardvark(object):
 
         In any case, a list of GPIO inputs that are currently high is returned.
         """
-        bitmask = api.py_aa_gpio_change(self.handle, timeout)
+        bitmask = api.aa_gpio_change(self.handle, timeout)
         _raise_error_if_negative(bitmask)
         gpios = [GPIO_MISO, GPIO_MOSI, GPIO_SCK, GPIO_SCL, GPIO_SDA, GPIO_SS]
         return [pin for pin in gpios if bitmask & pin != 0x00]
@@ -684,7 +684,7 @@ class Aardvark(object):
         new_list = list(self._high_gpio_outputs)
         new_list.append(output)
         mask = sum(new_list)
-        ret = api.py_aa_gpio_set(self.handle, mask)
+        ret = api.aa_gpio_set(self.handle, mask)
         _raise_error_if_negative(ret)
         self._high_gpio_outputs = new_list
 
